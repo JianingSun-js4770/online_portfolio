@@ -1,0 +1,17 @@
+name: "ANLY_503_Portfolio"
+output_dir: "docs"
+navbar:
+  title: "Jenny Sun"
+  left:
+    - text: "Home"
+      href: index.html
+    - text: "About"
+      href: about.html
+    - text: "Assignment 6"
+      href: A6_geospatial.html
+    - text: "Assignment 7"
+      href: A7_networks.html
+    - text: "Others"
+      href: Others.html
+    - text: "Final Project"
+      href: final_proj.html

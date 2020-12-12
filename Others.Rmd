@@ -1,0 +1,27 @@
+---
+title: "Others"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Other Assignments
+
+Please see github repo:
+
+### Assignment 1:
+https://github.com/JianingSun-js4770/503Portfolio/blob/main/A1_Concept.pdf
+
+### Assignment 2:
+https://github.com/JianingSun-js4770/503Portfolio/blob/main/A2_Concept.pdf
+
+### Assignment 3:
+https://github.com/JianingSun-js4770/503Portfolio/blob/main/A3_Concept.pdf
+
+### Assignment 4:
+https://github.com/JianingSun-js4770/503Portfolio/blob/main/A4_data-cleaning.zip
+
+### Assignment 5:
+https://github.com/JianingSun-js4770/503Portfolio/blob/main/A5_multitask-graph.zip

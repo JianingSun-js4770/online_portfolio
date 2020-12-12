@@ -1,0 +1,311 @@
+---
+title: "Final Project - Jenny"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(ggplot2)
+library(sqldf)
+library(plotly)
+library(sp)
+library(rworldmap)
+library(igraph)
+library(networkD3)
+library(zoom)
+library(dplyr)
+library(hrbrthemes)
+library(tm)
+library(tidyverse)
+library(tokenizers)
+library(wordcloud)
+library(maps)
+library(geosphere)
+df = read.csv("./all_dataset/Hotel_Reviews.csv")
+#df_airbnb = read.csv("AB_NYC_2019.csv")
+```
+
+Exploratory
+================================
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### reviewers from countries
+```{r}
+# Libraries
+library(tidyverse)
+
+# ----- This section prepare a dataframe for labels ---- #
+# Get the name and the y position of each label
+label_df <- as.data.frame(table(df$Reviewer_Nationality))[-1,]
+colnames(label_df) <- c("country","total_reviewers")
+# Sort out the top 50 countries and attach id
+label_df <- label_df[order(label_df$total_reviewers, decreasing= T),]
+label_df <- label_df[1:50,]
+label_df <- cbind(id=1:nrow(label_df),label_df)
+#label_df$total_reviewers <- 0+300/(max(label_df$total_reviewers)-min(label_df$total_reviewers))*(label_df$total_reviewers-min(label_df$total_reviewers))
+
+# calculate the ANGLE of the labels
+number_of_bar <- nrow(label_df)
+angle <-  90 - 360 * (label_df$id-0.5) /number_of_bar     # I substract 0.5 because the letter must have the angle of the center of the bars. Not extreme right(1) or extreme left (0)
+
+# calculate the alignment of labels: right or left
+# If I am on the left part of the plot, my labels have currently an angle < -90
+label_df$hjust<-ifelse( angle < -90, 1, 0)
+
+# flip angle BY to make them readable
+label_df$angle<-ifelse(angle < -90, angle+180, angle)
+# ----- ------------------------------------------- ---- #
+
+# Start the plot
+p <- ggplot(label_df, aes(x=country, y=total_reviewers/100)) +       # Note that id is a factor. If x is numeric, there is some space between the first bar
+  
+  # This add the bars with a blue color
+  geom_bar(stat="identity", fill=alpha("skyblue", 0.7)) +
+  
+  # Limits of the plot = very important. The negative value controls the size of the inner circle, the positive one is useful to add size over each bar
+  ylim(-100,120) +
+  
+  # Custom the theme: no axis title and no cartesian grid
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.margin = unit(rep(-1,4), "cm")      # Adjust the margin to make in sort labels are not truncated!
+  ) +
+  
+  # This makes the coordinate polar instead of cartesian.
+  coord_polar(start = 0) +
+  
+  # Add the labels, using the label_data dataframe that we have created before
+  geom_text(data=label_df, aes(x=id, y=total_reviewers/100+10, label=country, hjust=hjust), color="black", fontface="bold",alpha=0.6, size=2.5, angle= label_df$angle, inherit.aes = FALSE ) 
+
+p
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Table of Reviewers origins
+```{r}
+label_df <- as.data.frame(table(df$Reviewer_Nationality))[-1,]
+colnames(label_df) <- c("country","total_reviewers")
+label_df <- label_df[order(label_df$total_reviewers, decreasing= T),]
+knitr::kable(label_df)
+```
+
+Geographical
+================================
+Column {data-width=350}
+-----------------------------------------------------------------------
+### Hotels Distribution 
+```{r}
+hotels <- df[,c("Average_Score","Hotel_Name","Total_Number_of_Reviews","lat","lng")]
+hotels <- na.omit(hotels)
+hotels_df <- sqldf('SELECT DISTINCT(Hotel_Name), AVG(Total_Number_of_Reviews) AS avg_reviews, AVG(Average_Score) AS avg_score,lat,lng FROM hotels GROUP BY lat,lng')
+
+# Member States of the European Union
+europeanUnion <- c("Netherlands","UK")
+europe <- map_data("world") %>% filter(region%in%europeanUnion)
+
+# Make the map (static)
+p <- hotels_df %>%
+  ggplot() +
+  geom_polygon(data = europe, aes(x=long, y = lat, group = group), fill="blue", alpha=0.3) +
+  geom_point(aes(x=lng, y=lat, color=avg_reviews, alpha=avg_reviews, text=paste(Hotel_Name,lat,lng)) ) +
+  scale_size_continuous(range=c(1,15)) +
+  #scale_color_viridis(option="inferno", trans="log" ) +
+  scale_alpha_continuous(trans="log") +
+  theme_void() +
+  ylim(50,59) +
+  coord_map() +
+  theme(legend.position = "none")
+
+p <- ggplotly(p, tooltip="text")
+p 
+```
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+### travelers track
+```{r}
+travel <- df %>% select(c("Reviewer_Nationality","lat","lng"))
+travel <- na.omit(travel)
+
+#https://stackoverflow.com/questions/14334970/convert-latitude-and-longitude-coordinates-to-country-name-in-r
+coords2country = function(points)
+{  
+  countriesSP <- getMap(resolution='low')
+
+  #setting CRS directly to that from rworldmap
+  pointsSP = SpatialPoints(points, proj4string=CRS(proj4string(countriesSP)))  
+  
+  
+  # use 'over' to get indices of the Polygons object containing each point 
+  indices = over(pointsSP, countriesSP)
+  
+  # return the ADMIN names of each country
+  indices$ADMIN
+}
+
+points = data.frame(travel[,c("lng","lat")])
+countries = coords2country(points)
+#sum(is.na(countries))
+
+network_df <- data.frame(cbind(source_nation=travel$Reviewer_Nationality,target_nation=as.vector(countries)))
+network_df[is.null(network_df),]=NA
+network_df <- na.omit(network_df)
+network_df <- network_df[network_df!=""&network_df!=" ",]
+network_df <- na.omit(network_df)
+
+network_df <- sqldf('SELECT source_nation, target_nation, COUNT(*) AS travelers FROM network_df GROUP BY source_nation,target_nation')
+```
+
+```{r}
+travel_data <- data.frame(origin = network_df$source_nation,
+                         dest = network_df$target_nation)
+trim <- function( x ) {
+  gsub("(^[[:space:]]+|[[:space:]]+$)", "", x)
+}
+
+travel_data <- as.data.frame(sapply(travel_data, trim))
+travel_data <- travel_data[!travel_data$origin==travel_data$dest,]
+
+library(rworldmap)
+worldmap <- getMap()
+
+# Add latitude and longitude to each country 
+travel_data <- travel_data %>%
+  left_join(select(as.data.frame(worldmap), NAME, LON, LAT),
+            by = c("origin" = "NAME")) %>%
+  left_join(select(as.data.frame(worldmap), NAME, LON, LAT),
+            by = c("dest" = "NAME"))
+travel_data <- na.omit(travel_data)
+
+ggplot() + 
+  geom_polygon(data = worldmap, aes(long,lat, group=group), fill="gray") +
+  geom_curve(data = travel_data, aes(x = LON.x, y = LAT.x, xend = LON.y, yend = LAT.y),
+             alpha=0.05, col="red", curvature = -0.2)
+```
+
+
+Graph/Network
+================================
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+### Travel Routes
+```{r}
+network_df <- network_df[order(network_df$travelers, decreasing= T),]
+network_df <- network_df[1:50,]
+```
+
+```{r}
+network <- data.frame(
+  from=network_df$source_nation,
+  to=network_df$target_nation
+)
+p <- simpleNetwork(network, height="50px", width="50px",linkDistance=200,zoom = T)
+p
+```
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+### Travel Routes
+```{r}
+links=data.frame(
+  source=network_df$source_nation,
+  target=network_df$target_nation
+)
+
+# Turn it into igraph object
+network <- graph_from_data_frame(d=links, directed=F) 
+
+# Count the number of degree for each node:
+deg <- degree(network, mode="all")
+
+# Plot
+p <- plot(network, vertex.size=deg, vertex.color="tan", 
+     vertex.label.cex=0.6, vertex.label.dist=1.5)
+```
+
+
+Time Series
+================================
+
+Column { vertical_layout: scroll}
+-----------------------------------------------------------------------
+### Average Number of Reviews along with time
+```{r}
+df$neg_bin <- 1
+df[df$Negative_Review=="No Negative","neg_bin"]<-0
+ts_df <- sqldf('SELECT COUNT(*) AS Number_of_Reviews, SUM(neg_bin) AS Negative_Reviews, Review_Date FROM df GROUP BY Review_Date')
+ts_df <- na.omit(ts_df)
+ts_df$Date <- as.Date(ts_df$Review_Date,format = "%m/%d/%Y")
+```
+
+
+```{r}
+# Usual area chart
+p <- ts_df %>%
+    ggplot(aes(x=Date)) +
+    geom_area(aes(y=Number_of_Reviews),fill="#69b3a2", alpha=0.5) +
+    geom_line(aes(y=Number_of_Reviews),color="#69b3a2") +
+    geom_line(aes(y=Negative_Reviews),color="steelblue") +
+    geom_area(aes(y=Number_of_Reviews),color="steelblue",alpha=0.7) +
+    ylab("Number of Reviews") +
+    theme_ipsum()
+
+# Turn it interactive with ggplotly
+p <- ggplotly(p)
+p
+```
+
+
+Text
+================================
+
+Column {data-width=500} { vertical_layout: scroll}
+-----------------------------------------------------------------------
+### Positive Review Word Cloud
+```{r}
+text_df <- df[1:5000,]
+pos_reviews <- paste(text_df$Positive_Review, collapse = '')
+pos_reviews <- removePunctuation(pos_reviews)
+pos_reviews <- removeNumbers(pos_reviews)
+pos_reviews <- tolower(pos_reviews)
+stopWords <- stopwords("en")
+words <- tokenize_words(pos_reviews)
+#length(words[[1]])
+corpus <- words[[1]][!(words[[1]] %in% stopWords)]
+tab <- table(corpus)
+tab <- data_frame(word = names(tab), count = as.numeric(tab))
+tab <- tab[1:1000,]
+par(bg="black") 
+wordcloud(tab$word, tab$count, col=terrain.colors(length(tab$word) , alpha=0.9),rot.per=0.3)
+```
+
+Column {data-width=500} { vertical_layout: scroll}
+-----------------------------------------------------------------------
+### Negative Review Word Cloud
+```{r}
+neg_reviews <- paste(text_df$Negative_Review, collapse = '')
+neg_reviews <- removePunctuation(neg_reviews)
+neg_reviews <- removeNumbers(neg_reviews)
+neg_reviews <- tolower(neg_reviews)
+stopWords <- stopwords("en")
+words <- tokenize_words(neg_reviews)
+#length(words[[1]])
+corpus <- words[[1]][!(words[[1]] %in% stopWords)]
+tab <- table(corpus)
+tab <- data_frame(word = names(tab), count = as.numeric(tab))
+tab <- tab[1:1000,]
+par(bg="black") 
+wordcloud(tab$word, tab$count, col=terrain.colors(length(tab$word) , alpha=0.9),rot.per=0.3)
+```
+

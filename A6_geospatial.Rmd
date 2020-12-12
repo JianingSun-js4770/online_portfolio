@@ -1,0 +1,136 @@
+---
+title: "a6_geospatial_jenny"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### Preparation
+```{r}
+library(readxl)
+library(sqldf)
+library(stringr)
+library(ggplot2)
+library(sf)
+library(viridis)
+```
+
+load vote dataset
+```{r}
+vote <- read.csv("./all_dataset/countypres_2000-2016.csv")
+head(vote)
+```
+load unemployment dataset
+```{r}
+unemployment <- read_excel("./all_dataset/A6_data/Unemployment.xls",sheet="Unemployment Med HH Income")
+unemployment <- na.omit(unemployment)
+colnames(unemployment) <- unemployment[1,]
+unemployment <- unemployment[-1,]
+```
+
+### Task 1. Data Extraction
+You will extract from the datasets the proportion of the vote won by either the Democratic or Republican candidate for each county for each of the three elections.
+```{r}
+vote["prop"] <- vote["candidatevotes"]/vote["totalvotes"]
+##table(vote["year"])
+#select 3 election year: 2008,2012,2016
+vote <- vote[vote$year %in% c(2008,2012,2016),]
+vote <- na.omit(vote)
+table(vote["year"])
+winner_df <- sqldf("SELECT year, FIPS, max(prop) AS winner_prop from vote GROUP BY year, FIPS")
+vote <- sqldf("SELECT vote.* from vote INNER JOIN winner_df ON winner_df.year=vote.year AND winner_df.FIPS=vote.FIPS AND winner_df.winner_prop=vote.prop")
+#convert int to char
+vote$FIPS <- as.character(vote$FIPS)
+vote$FIPS <- str_pad(vote$FIPS, 5, pad = "0")
+names(vote)[names(vote)=="FIPS"] <- "GEOID"
+```
+
+You will also extract the unemployment rates for each county for each of the three election years
+```{r}
+unemployment_rates <- unemployment[,c("FIPStxt","Unemployment_rate_2008","Unemployment_rate_2012","Unemployment_rate_2016")]
+unemployment_rates[,c("Unemployment_rate_2008","Unemployment_rate_2012","Unemployment_rate_2016")] <- sapply(unemployment_rates[,c("Unemployment_rate_2008","Unemployment_rate_2012","Unemployment_rate_2016")],as.numeric)
+names(unemployment_rates)[names(unemployment_rates)=="FIPStxt"] <- "GEOID"
+```
+
+### Task 2: Create 6 choropleths
+load shape file
+```{r}
+shapefile=st_read("./all_dataset/A6_data/tl_2019_us_county-1/tl_2019_us_county.shp")
+#to make plot quicker, we only filter out the statefp="31"
+map_geo = shapefile[shapefile$STATEFP=="31",]
+rm(shapefile)
+```
+
+The proportion of the vote won by your chosen candidate in each county for each of the three elections, based on a map of US counties represented in the shape files mentioned above (3 choropleths)
+-year 2008
+```{r}
+votemap_2008 <- merge(map_geo, vote[vote$year==2008,], by=c("GEOID"),duplicateGeoms = TRUE)
+ggplot(votemap_2008) +geom_sf(aes(geometry=geometry,fill=prop))+xlab('Longitude')+ylab('Latitude')+ggtitle("state 31 - votemap - 2008")+theme(plot.title = element_text(color = "black", size = 15, vjust = 1,hjust = 0.5, face="bold"),
+          legend.title = element_text(color = "black", size = 10),
+          legend.text = element_text(color = "black", size = 10), 
+          legend.position="right",
+          panel.spacing.x=unit(5, "lines"), aspect.ratio =1,
+          axis.text=element_text(size=6),
+          axis.title=element_text(size=8))
+```
+-year 2012
+```{r}
+votemap_2012 <- merge(map_geo, vote[vote$year==2012,], by=c("GEOID"),duplicateGeoms = TRUE)
+ggplot(votemap_2012) +geom_sf(aes(geometry=geometry,fill=prop))+xlab('Longitude')+ylab('Latitude')+ggtitle("state 31 - votemap - 2012")+theme(plot.title = element_text(color = "black", size = 15, vjust = 1,hjust = 0.5, face="bold"),
+          legend.title = element_text(color = "black", size = 10),
+          legend.text = element_text(color = "black", size = 10), 
+          legend.position="right",
+          panel.spacing.x=unit(5, "lines"), aspect.ratio =1,
+          axis.text=element_text(size=6),
+          axis.title=element_text(size=8))
+```
+-year 2016
+```{r}
+votemap_2016 <- merge(map_geo, vote[vote$year==2016,], by=c("GEOID"),duplicateGeoms = TRUE)
+ggplot(votemap_2016) +geom_sf(aes(geometry=geometry,fill=prop))+xlab('Longitude')+ylab('Latitude')+ggtitle("state 31 - votemap - 2016")+theme(plot.title = element_text(color = "black", size = 15, vjust = 1,hjust = 0.5, face="bold"),
+          legend.title = element_text(color = "black", size = 10),
+          legend.text = element_text(color = "black", size = 10), 
+          legend.position="right",
+          panel.spacing.x=unit(5, "lines"), aspect.ratio =1,
+          axis.text=element_text(size=6),
+          axis.title=element_text(size=8))
+```
+
+
+The unemployment rate in each county for each of the three election years (2008, 2012, 2016) using the US map of counties based on the same shapefiles as above. (3 choropleths)
+-year 2008
+```{r}
+unemploymap_2008 <- merge(map_geo, unemployment_rates[,c("GEOID","Unemployment_rate_2008")], by=c("GEOID"),duplicateGeoms = TRUE)
+ggplot(unemploymap_2008) +geom_sf(aes(geometry=geometry,fill=Unemployment_rate_2008))+xlab('Longitude')+scale_fill_gradientn(colors = viridis(10))+ylab('Latitude')+ggtitle("state 31 - Unemployment map - 2008")+theme(plot.title = element_text(color = "black", size = 15, vjust = 1,hjust = 0.5, face="bold"),
+          legend.title = element_text(color = "black", size = 10),
+          legend.text = element_text(color = "black", size = 10), 
+          legend.position="right",
+          panel.spacing.x=unit(5, "lines"), aspect.ratio =1,
+          axis.text=element_text(size=6),
+          axis.title=element_text(size=8))
+```
+
+-year 2012
+```{r}
+unemploymap_2012 <- merge(map_geo, unemployment_rates[,c("GEOID","Unemployment_rate_2012")], by=c("GEOID"),duplicateGeoms = TRUE)
+ggplot(unemploymap_2012) +geom_sf(aes(geometry=geometry,fill=Unemployment_rate_2012))+xlab('Longitude')+scale_fill_gradientn(colors = viridis(10))+ylab('Latitude')+ggtitle("state 31 - Unemployment map - 2012")+theme(plot.title = element_text(color = "black", size = 15, vjust = 1,hjust = 0.5, face="bold"),
+          legend.title = element_text(color = "black", size = 10),
+          legend.text = element_text(color = "black", size = 10), 
+          legend.position="right",
+          panel.spacing.x=unit(5, "lines"), aspect.ratio =1,
+          axis.text=element_text(size=6),
+          axis.title=element_text(size=8))
+```
+
+-year 2016
+```{r}
+unemploymap_2016 <- merge(map_geo, unemployment_rates[,c("GEOID","Unemployment_rate_2016")], by=c("GEOID"),duplicateGeoms = TRUE)
+ggplot(unemploymap_2016) +geom_sf(aes(geometry=geometry,fill=Unemployment_rate_2016))+xlab('Longitude')+scale_fill_gradientn(colors = viridis(10))+ylab('Latitude')+ggtitle("state 31 - Unemployment map - 2016")+theme(plot.title = element_text(color = "black", size = 15, vjust = 1,hjust = 0.5, face="bold"),
+          legend.title = element_text(color = "black", size = 10),
+          legend.text = element_text(color = "black", size = 10), 
+          legend.position="right",
+          panel.spacing.x=unit(5, "lines"), aspect.ratio =1,
+          axis.text=element_text(size=6),
+          axis.title=element_text(size=8))
+```
